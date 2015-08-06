@@ -2,11 +2,28 @@ include('array');
 include('tools');
 
 // On commence par déclarer deux tableaux, qui contiendrons les alliés
-// et les ennemies tout le monde durant le combat.
-global allies, enemies;
+// et les ennemies tout le monde durant le combat, ainsi que l’id du
+// poireau courant.
+/*global allies = [], enemies = [], deadAllies = [],
+  myLeek, alliesCell = [], enemiesCell = [];
+
+if ( myLeek === null ) {
+  myLeek = getLeek();
+}*/
+
+global allies = getAllies(),
+  enemies = getEnemies(),
+  deadAllies = [],
+  myLeek = getLeek(),
+  alliesCell = [] , enemiesCell = [];
+
+debug(getOperations());
 
 
+// Vérifie si un poireau est allié, non dépendant du niveau.
+// Cela coûte le double d’opérations, en dessous du niveau 14.
 if ( getLevel() < 14 ) {
+  // 40 opérations
   isAlly = function (leek) {
     if ( getTeamID(leek) === getTeamID() ) {
       return true;
@@ -15,36 +32,55 @@ if ( getLevel() < 14 ) {
   };
 }
 
-// Renvoie un tableau associatif de la forme leek -> cell
+/* Va chercher les alliés et ennemies, avant le niveau 16
+ */
 function processAllLeeks() {
-  var enemies_assoc = [],  allies_assoc = [], 
-      leek = 0, cell = getCell(leek);
+  var leek = 0, cell = getCell(leek);
   do {
     //debug('On cherche '+getName(leek)+' ['+leek+']');
     if ( isAlly(leek) ) {
-      allies_assoc[leek]['cell'] = cell;
+      push(allies, leek);
     } else {
-      enemies_assoc[leek]['cell'] = cell;
+      push(enemies, leek);
     }
     leek++;
     cell = getCell(leek);
   } while ( cell !== null );
-  allies = allies_assoc;
-  enemies = enemies_assoc;
 }
+
+function getEnemiesCell() {
+  if ( enemiesCell[0] === null ) {
+    for (var leek in enemies) {
+      push(enemiesCell, getCell(leek));
+    }
+  }
+  return enemiesCell;
+}
+
+function getAlliesCell() {
+  if ( alliesCell[0] === null ) {
+    for (var leek in allies) {
+      push(alliesCell, getCell(leek));
+    }
+  }
+  return alliesCell;
+}
+
 
 if ( getLevel() < 16 ) {
   getAllies = function () {
-    return getAssocKeys(allies);
+    return allies;
   };
   getEnemies = function () {
-    return getAssocKeys(enemies);
+    return enemies;
   };
+
+  if ( allies[0] === null and enemies[0] === null ) {
+    processAllLeeks();
+  }
+
+} else if ( allies[0] === null and enemies[0] === null ) {
+  allies = getAllies();
+  enemies = getEnemies();
 }
 
-
-
-// Si les deux sont vides, on cherche tout le monde.
-if ( allies === null and enemies === null ) {
-  processAllLeeks();
-}

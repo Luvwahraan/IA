@@ -1,195 +1,131 @@
+include('tools');
+include('leek');
+include('weapons');
+include('chip');
+include('danger');
 
-/***************************************************************/
-function canIBreak(value) {
-   if ( value == USE_INVALID_TARGET or
-    value == USE_INVALID_COOLDOWN or
-    value == USE_INVALID_POSITION
-    ) {
-    return true;
-  }
-  return false;
-}
-
-function shotLeek(leek) {
-  var ret = null;
-  while ( ret != USE_NOT_ENOUGH_TP and getLife(leek) > 0) {
-    ret = useWeapon(leek);
-  if ( canIBreak(ret) ) { break; }
-  }
-}
-
-function sparkLeek(leek) {
-  var ret = null;
-  while ( ret != USE_NOT_ENOUGH_TP and getLife(leek) > 0) {
-    ret = useChip(CHIP_SPARK, leek);
-  if ( canIBreak(ret) ) { break; }
-  }
-}
+global i = 0;
 
 
-/***********************************************************/
-
-global myLeek = getLeek();
-global myWeapon = getWeapon();
 
 // Infos sur l’ennemi.
-var enemy = getNearestEnemy();
-global enemyCell = getCell(enemy);
-global enemyMP = getMP(enemy);
-var enemyWeapon = getWeapon(enemy);
-var enemyWeaponMinScope = getWeaponMinScope(enemyWeapon);
-var enemyWeaponMaxScope = getWeaponMaxScope(enemyWeapon);
-global enemyDistance;
-global nextEnemyDistance;
+global target = [];
 
-function calcDistance() {
-  enemyDistance = getCellDistance(getCell(), enemyCell);
-  nextEnemyDistance = enemyDistance - enemyMP;
-  debug('Distances ennemi : '+enemyDistance+', '+nextEnemyDistance);
+function targetDistance() {
+  target['distance'] = getCellDistance( getCell(), target['cell'] );
+  target['nextDistance'] = target['distance'] - target['mp'];
+  debug('Distances de la cible : '+target['distance']+', '+target['nextDistance']);
 }
-calcDistance();
 
-function equipWeapon( enemyDist ) {
-  // On équipe s’il le faut, et on change si l’ennemie est trop près.
-  if ( myWeapon == null ) {
-    setWeapon(WEAPON_DOUBLE_GUN);
-    myWeapon = WEAPON_DOUBLE_GUN;
-  } else if ( enemyDist < 2 and myWeapon != WEAPON_PISTOL ) {
+function getTarget(newTarget) {
+  if (newTarget) {
+    target['id'] = getNearestEnemy();
+    target['mp'] = getTotalMP( target['id'] );
+  }
+
+  target['weapon']    = getWeapon(target['id']);
+  target['cell']      = getCell(target['id']);
+  target['minScope']  = getWeaponMinScope(target['weapon']);
+  target['maxScope']  = getWeaponMaxScope(target['weapon']);
+  targetDistance();
+}
+
+
+
+if ( target['id'] == null || isDead(target['id']) ) {
+  getTarget(true);
+} else {
+  getTarget(false);
+}
+
+
+if ( lastUse[CHIP_HELMET] <= 0 ) {
+  useChip_(CHIP_HELMET, myLeek);
+}
+if ( lastUse[CHIP_WALL] <= 0 ) {
+  useChip_(CHIP_WALL, myLeek);
+}
+if ( lastUse[CHIP_PROTEIN] <= 0 ) {
+  useChip_(CHIP_PROTEIN, myLeek);
+}
+
+// Si la vie a baissé, on se soigne.
+if ( lastUse[CHIP_CURE] <= 0 and getLife() < getTotalLife() - 47 ) {
+  useChip_( CHIP_CURE, myLeek );
+}
+if ( getLife() < getTotalLife() - 12 ) {
+  useChip( CHIP_BANDAGE, myLeek );
+}
+
+
+// Si la vie est pleine, on attend qu’on la cible se rapproche.
+var distance = 7; // double gun
+if ( getLife() == getTotalLife() ) {
+  debug('On attendra que la '+getName(target['id'])+' se rapproche.');
+  distance = 11 + target['mp']; // spark + mp + 1
+}
+
+// On se rapproche de la cible, si on peut attaquer ensuite.
+//while ( target['distance'] >=7 and getMP() > 0  ) {
+var tp = getTP(),
+  dg = getDanger( target['nextDistance'], myLeek );
+
+
+//if ( ( tp >= 3 and dg > 20 ) or ( tp > 0 ) or ( tp < 3 and dg <= 0 ) ) {
+if ( ( dg <= 60 && tp >= 3 ) or ( dg <= 20 ) ) {
+  debug('On peut évoquer un déplacement.');
+  for (i = 0; i <= getTotalMP(); i++ ) {
+    if ( target['distance'] <= distance || getMP() == 0 ) { break; }
+    debug('On se rapproche.');
+    moveTowardCell( target['cell'], 1 );
+    targetDistance();
+  }
+} else {
+  if ( average(myCell) == shift(myCell) ) {
+    moveTowardCell( target['cell'], 1 );
+  } else {
+    debug('TP bof ('+tp+'), et danger présent ('+dg+'%) : on ne se rapproche pas.');
+  }
+}
+
+
+// Ou bien on s’en éloigne.
+/*if ( target['distance'] < 2 ) {
+  while ( target['distance'] >=7 && getMP() > 0 ) {
+    moveAwayFrom( target['id'], 1 );
+    targetDistance();
+  }
+}*/
+
+if ( target['distance'] <= 7 ) {
+  if ( target['distance'] < 2 and myWeapon != WEAPON_PISTOL ) {
+    debug('On équipe le pistolet.');
     setWeapon(WEAPON_PISTOL);
     myWeapon = WEAPON_PISTOL;
-  } else if ( enemyDist >= 2 and myWeapon != WEAPON_DOUBLE_GUN ) {
+  } else if ( target['distance'] >= 2 and myWeapon != WEAPON_DOUBLE_GUN ) {
+    debug('On équipe le double canon.');
     setWeapon(WEAPON_PISTOL);
     myWeapon = WEAPON_PISTOL;
   }
+
+  shotLeek( target['id'] );
+}
+if ( target['distance'] <= 10 ) {
+  debug( 'On brûle '+ getName(target['id']) );
+  sparkLeek( target['id'] );
+}
+
+/*// S’il reste des points, on jette un caillou.
+if ( getTP() >= 2 && target['distance'] <= 5 ) {
+  debug( 'On caillaisse '+ getName(target['id']) );
+  useChip(CHIP_PEBBLE, target['id']);
+}*/
+
+// s’il reste des points de mouvement, on fuit.
+for (i=0; i <= (getDanger(target['nextDistance'], myLeek) - 15); i++ ) {
+  moveAwayFrom( target['id'], 1 );
+  if ( getMP() == 0 || getLife() >= getTotalLife() / 2 ) { break; }
+  debug('On s’éloigne.' );
 }
 
 
-var it = 0;
-while ( getTP() > 0 and getMP() > 0 ) {
-  it++;
-  debug("Itération " + it);
-
-  /*if ( getLife(enemy) < 51 ) {
-  if ( enemyDistance < 2 ) {
-    moveAwayFrom(enemy, 2);
-    calcDistance();
-  }
-  if ( nextEnemyDistance <= 7 + getMP() ) {
-    while ( enemyDistance >= 5 ) {
-      moveToward(enemy, 1);
-      calcDistance();
-    }
-    equipWeapon(enemyDistance);
-    shotLeek(enemy);
-    useChip(CHIP_PEBBLE, enemy);
-    calcDistance();
-  }
-  }
-
-  /*if ( getLife() < 50 and enemyDistance + enemyMP < 10 + getMP() ) {
-    moveAwayFrom(enemy);
-  useChip(CHIP_SPARK, enemy);
-  useChip(CHIP_BANDAGE, leek);
-  helmetLeek(myLeek);
-  }*/
-
-  /*/ Si on va mourir, on tente une attaque suicide.
-  if ( getLife() < 50 ) {
-    if ( getLife(enemy) <= 51 ) {
-    if ( enemyDistance < 2 ) {
-      moveAwayFrom(enemy);
-    } else if ( enemyDistance + getMP() >= 5 ) {
-      moveToward(enemy);
-    }
-    useChip(CHIP_PEBBLE, enemy);
-    shotLeek(enemy);
-    calcDistance();
-    } else {
-    useChip(CHIP_BANDAGE, myLeek);
-    useChip(CHIP_HELMET, myLeek);
-    shotLeek(enemy);
-    useChip(CHIP_PEBBLE, enemy);
-    }
-  }
-
-  // Si trop près de l’ennemi, on s’éloigne.
-  /*if ( enemyDistance < 2 ) {
-    moveAwayFrom(enemy);
-  }*/
-
-  equipWeapon( enemyDistance );
-
-  // L’ennemi approche… on se protège !
-  if ( 11 >= nextEnemyDistance and nextEnemyDistance <= 13 ) {
-    useChip(CHIP_HELMET, myLeek);
-  useChip(CHIP_PROTEIN, myLeek);
-  }
-
-  // L’ennemi est loin, on cavale.
-  if ( nextEnemyDistance > 10 + getMP() ) {
-    debug("Enemy far away. Moving.");
-    moveToward(enemy);
-  calcDistance();
-  }
-
-  while ( enemyDistance > 10 and getMP() > 0 ) {
-    debug("Moving a little");
-    moveToward(enemy, 1);
-    calcDistance();
-  }
-
-  // Selon la distance, on choisie son attaque.
-  if ( enemyDistance <= 7 ) {
-    shotLeek(enemy);
-  } else if ( enemyDistance <= 10 ) {
-    sparkLeek(enemy);
-  }
-
-  if ( isDead(enemy) ) {
-    debug("Enemi mort. Suivant !");
-    // On met à jour les donnée de l’ennemi.
-    enemy = getNearestEnemy();
-    enemyCell = getCell(enemy);
-    if ( enemy === null or enemyCell === null ) { break; }
-
-    enemyWeapon = getWeapon(enemy);
-    enemyWeaponMinScope = getWeaponMinScope(enemyWeapon);
-    enemyWeaponMaxScope = getWeaponMaxScope(enemyWeapon);
-    calcDistance();
-  } else if ( enemyDistance <= 10 ) {
-    debug("L’ennemi est trop près… on s’éloigne.");
-    moveAwayFrom(enemy);
-  calcDistance();
-  }
-
-  if ( getTP() > 0 ) {
-    // Si on est blessé on se soigne, ou un allié proche.
-    if ( getLife() < 100 ) {
-      useChip(CHIP_BANDAGE, myLeek);
-    } else {
-      var ally = getNearestAlly();
-      var allyLife = getLife(ally);
-      if ( allyLife < 100 ) {
-        useChip(CHIP_BANDAGE, ally);
-      } else if ( allyLife < 50 ) {
-        useChip(CHIP_HELMET, ally);
-      } else {
-        useChip(CHIP_HELMET, myLeek);
-    }
-    }
-
-    if ( enemyDistance <= 5 ) {
-      useChip(CHIP_PEBBLE, enemy);
-    }
-
-    // plus rien à faire : on sort de la boucle.
-    break;
-  }
-
-  debug( "Il reste " + getTP() + "TP et " + getMP() + "MP." );
-}
-
-debugE("Operations : " + getOperations());
-
-include("quotes");
-randSay();
